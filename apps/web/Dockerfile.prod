@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1.7
+# Production Dockerfile for the Next.js web app.
+#
+# Three-stage build:
+#   1) deps    — installs npm deps from package.json (cached as long as
+#                package.json doesn't change).
+#   2) builder — runs `next build` with `output: "standalone"`, which emits
+#                a minimal server bundle into `.next/standalone`.
+#   3) runner  — copies only the standalone output + static assets and
+#                public/ into a small runtime image. Result ~150 MB.
+#
+# Usage (from repo root):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml build web
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package.json ./
+RUN npm install --omit=dev=false
+
+FROM node:22-alpine AS builder
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# Public envs are baked at build time. The Dockerfile reads them as
+# build-args so docker-compose.prod.yml can pass them in.
+ARG NEXT_PUBLIC_API_BASE_URL
+ARG NEXT_PUBLIC_AUTH_PROVIDER
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_DEV_USER_EMAIL
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
+    NEXT_PUBLIC_AUTH_PROVIDER=$NEXT_PUBLIC_AUTH_PROVIDER \
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
+    NEXT_PUBLIC_DEV_USER_EMAIL=$NEXT_PUBLIC_DEV_USER_EMAIL
+RUN npm run build
+
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+# Non-root user — small hardening.
+RUN addgroup -S -g 1001 nodejs && adduser -S -u 1001 -G nodejs nextjs
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+USER nextjs
+EXPOSE 3000
+CMD ["node", "server.js"]

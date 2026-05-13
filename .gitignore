@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# uv
+.uv/
+
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.pnp.*
+.yarn/
+
+# Env / secrets
+.env
+.env.local
+.env.prod
+.env.*.local
+!.env.example
+!.env.prod.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Docker volumes
+.docker-data/
+postgres-data/
+redis-data/
+langfuse-data/
+
+# Misc
+*.log
+.cache/
+coverage/
+
+# Docs / VKR sources (not for public repo)
+docs/

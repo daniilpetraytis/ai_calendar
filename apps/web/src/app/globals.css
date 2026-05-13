@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-text;
+}
+
+.fc {
+  @apply text-text;
+  --fc-border-color: #1c2230;
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: #11151c;
+  --fc-list-event-hover-bg-color: #1c2230;
+  --fc-today-bg-color: rgba(124, 92, 255, 0.06);
+}
+
+.fc .fc-button {
+  @apply bg-panel border border-border text-text;
+}
+
+.fc .fc-button:hover,
+.fc .fc-button-primary:not(:disabled).fc-button-active {
+  @apply bg-border;
+}
+
+.fc .fc-event {
+  @apply border-0 px-1 py-0.5;
+  background-color: rgba(124, 92, 255, 0.85);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+/* Default-rendered events (month view, all-day strip): allow titles to wrap
+   instead of being cut off by ellipsis. */
+.fc .fc-event-title,
+.fc .fc-event-title-container {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.fc .fc-event-main,
+.fc .fc-event-main-frame {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Time-grid events use our React renderer (time on line 1, title on line 2);
+   keep the wrapper compact so our two lines actually fit a 30-min slot. */
+.fc .fc-timegrid-event .fc-event-main {
+  padding: 1px 2px;
+}
+
+/* Taller default slot rows so a 30-min event can show time + title on
+   separate lines without overflow. 24 hours stay vertically scrollable. */
+.fc .fc-timegrid-slot {
+  height: 2.25em;
+}
+
+/* Compact toolbar */
+.fc .fc-toolbar.fc-header-toolbar {
+  margin-bottom: 0.75em;
+}
+
+.fc .fc-toolbar-title {
+  font-size: 1rem;
+  font-weight: 600;
+}

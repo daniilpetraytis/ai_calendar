@@ -1,0 +1,25 @@
+# Tiny image with pg_dump + aws-cli for daily DB backups to Yandex Object
+# Storage. Runs the backup.sh script once a day via a `sleep`-loop (cheaper
+# and simpler than a real cron daemon for a single job).
+FROM alpine:3.20
+
+RUN apk add --no-cache \
+        postgresql16-client \
+        aws-cli \
+        ca-certificates \
+        tzdata
+
+COPY backup.sh /usr/local/bin/backup.sh
+RUN chmod +x /usr/local/bin/backup.sh
+
+# Run once at start (catches "we just deployed, want a dump NOW"), then
+# every BACKUP_INTERVAL_SECONDS (default 86400 = 24h). Compose's
+# `restart: unless-stopped` handles container-level resilience.
+ENV BACKUP_INTERVAL_SECONDS=86400
+
+ENTRYPOINT ["sh", "-c", "\
+    /usr/local/bin/backup.sh || true; \
+    while sleep $BACKUP_INTERVAL_SECONDS; do \
+        /usr/local/bin/backup.sh || true; \
+    done \
+"]

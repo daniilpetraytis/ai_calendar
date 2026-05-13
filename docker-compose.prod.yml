@@ -1,0 +1,107 @@
+# Production override for docker-compose.yml.
+#
+# Run with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#                  --env-file .env.prod up -d --build
+#
+# What this file does relative to the base compose:
+#   - drops :3000 and :8000 host port bindings (only Caddy is reachable from
+#     the internet, everything else stays on the internal docker network)
+#   - removes source-mount volumes (./apps/web:/app etc.) — code is baked
+#     into the image
+#   - replaces `next dev` with the production "standalone" runtime
+#   - removes `uvicorn --reload`
+#   - adds `restart: unless-stopped` to every long-running service
+#   - adds Caddy in front (TLS, reverse-proxy, http→https redirect)
+#   - enables the telegram profile by default (so `up` brings tg-bot too)
+#
+# Use the `profiles: ["telegram"]` line if you want to TEMPORARILY skip the
+# bot — `docker compose ... up -d --scale tg-bot=0` won't work here because
+# we explicitly want it on.
+
+services:
+  postgres:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  backend:
+    restart: unless-stopped
+    # No more `--reload` and no source-mount — image is the source of truth.
+    ports: !reset []
+    volumes: !reset []
+    command: >
+      sh -c "uv run alembic upgrade head &&
+             uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips='*'"
+
+  worker:
+    restart: unless-stopped
+    volumes: !reset []
+
+  web:
+    restart: unless-stopped
+    # Use the production-optimised Dockerfile.
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_AUTH_PROVIDER: ${NEXT_PUBLIC_AUTH_PROVIDER}
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_DEV_USER_EMAIL: ${NEXT_PUBLIC_DEV_USER_EMAIL}
+    ports: !reset []
+    volumes: !reset []
+    command: !reset null   # use Dockerfile CMD (`node server.js`)
+
+  tg-bot:
+    restart: unless-stopped
+    # Override the dev profiles=[telegram] so it always starts in prod.
+    profiles: !reset []
+    # When TG_BOT_MODE=webhook, aiogram listens on push_listen_port + 1
+    # (8002 by default). Expose it INTERNALLY only — Caddy routes
+    # /telegram/webhook here.
+
+  backup:
+    build:
+      context: ./deploy
+      dockerfile: Dockerfile.backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      BACKUP_BUCKET: ${BACKUP_BUCKET}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION}
+      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY}
+      BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY}
+      BACKUP_RETAIN_DAYS: ${BACKUP_RETAIN_DAYS:-14}
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN must be set in .env.prod}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@${DOMAIN}}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data       # Let's Encrypt certs survive container rebuilds
+      - caddy-config:/config
+    depends_on:
+      - web
+      - backend
+      - tg-bot
+
+volumes:
+  caddy-data:
+  caddy-config:

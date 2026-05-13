@@ -1,0 +1,48 @@
+# AI Calendar — Caddyfile.
+#
+# Caddy automatically obtains and renews Let's Encrypt certificates as long
+# as ${DOMAIN} resolves to this host on ports 80 + 443 (no extra config
+# needed). It also redirects http://${DOMAIN} → https://${DOMAIN}.
+#
+# Three reverse-proxy rules:
+#   /api/*              → backend:8000   (FastAPI, includes /api/chat SSE)
+#   /telegram/webhook   → tg-bot:8002    (aiogram webhook receiver)
+#   /*                  → web:3000       (Next.js)
+#
+# ${DOMAIN} comes from the .env file via docker-compose.prod.yml.
+{
+	# Default ACME issuer is Let's Encrypt. ACME_EMAIL is optional but
+	# recommended — Let's Encrypt uses it for expiry reminders.
+	email {$ACME_EMAIL:admin@localhost}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Streaming endpoints (SSE) — bypass Caddy's response buffering so
+	# tokens arrive in real time to the browser.
+	@sse {
+		path /api/chat
+	}
+	reverse_proxy @sse backend:8000 {
+		flush_interval -1
+	}
+
+	# Telegram webhook from api.telegram.org → aiogram handler in tg-bot.
+	# secret_token header check is enforced by aiogram itself (see
+	# TG_WEBHOOK_SECRET), Caddy just routes raw bytes through.
+	reverse_proxy /telegram/webhook tg-bot:8002
+
+	# All other /api/* — regular JSON FastAPI endpoints.
+	reverse_proxy /api/* backend:8000
+
+	# Everything else — Next.js (pages + /_next/* static assets).
+	reverse_proxy web:3000
+}
+
+# Optional bare-IP fallback. Useful while DNS is still propagating: visit
+# http://158.160.134.168 and you'll get a "domain not configured" page
+# instead of a Caddy default landing.
+:80 {
+	respond "AI Calendar — domain not configured. Set DOMAIN= in .env.prod and restart Caddy." 200
+}
